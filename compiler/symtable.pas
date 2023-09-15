@@ -2952,7 +2952,13 @@ implementation
         s1,s2 : string;
       begin
         if def.typ in [objectdef,recorddef] then
-          s1:=tabstractrecorddef(def).RttiName
+        begin
+          s1:=tabstractrecorddef(def).RttiName;
+
+          //lets provide better name for "reference to procedure"
+          if is_funcref(def) then
+            s1 := 'reference to ' + get_invoke_procdef(tobjectdef(def)).customprocname([pno_proctypeoption, pno_prettynames]);
+        end
         else
           s1:=def.typename;
         { When the names are the same try to include the unit name }

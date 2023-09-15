@@ -237,7 +237,8 @@ implementation
       proc_add_definition(invokedef);
       invokedef.calcparas;
       { def is not owned, so it can be simply freed }
-      def.free;
+      if def.owner = nil then
+        def.free;
       def:=intfdef;
     end;
 

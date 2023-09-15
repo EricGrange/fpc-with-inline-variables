@@ -221,6 +221,7 @@ unit procinfo;
        cprocinfo : tcprocinfo;
        { information about the current sub routine being parsed (@var(pprocinfo))}
        current_procinfo : tprocinfo;
+       current_proc_block_lvl : Integer;
 
 implementation
 

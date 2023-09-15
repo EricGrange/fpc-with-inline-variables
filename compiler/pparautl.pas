@@ -369,11 +369,14 @@ implementation
                  hs:=pd.resultname^
                else
                  hs:=pd.procsym.name;
-               sl:=tpropaccesslist.create;
-               sl.addsym(sl_load,pd.funcretsym);
-               aliasvs:=cabsolutevarsym.create_ref(hs,pd.returndef,sl);
-               include(aliasvs.varoptions,vo_is_funcret);
-               tlocalsymtable(pd.localst).insertsym(aliasvs);
+               if hs <> '' then //may be empty for function with generic result for some reason
+               begin              
+                 sl:=tpropaccesslist.create;
+                 sl.addsym(sl_load,pd.funcretsym);
+                 aliasvs:=cabsolutevarsym.create_ref(hs,pd.returndef,sl);
+                 include(aliasvs.varoptions,vo_is_funcret);
+                 tlocalsymtable(pd.localst).insertsym(aliasvs);
+               end;
              end;
 
            { insert result also if support is on }

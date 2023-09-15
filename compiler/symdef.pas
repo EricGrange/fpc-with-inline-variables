@@ -1672,7 +1672,7 @@ implementation
              st:=st.defowner.owner;
            end;
           { local classes & interfaces are possible (because of closures) }
-          if st.symtabletype<>localsymtable then
+          if not (st.symtabletype in [localsymtable,parasymtable]) then
             break;
           prefix:='$'+prefix;
         until false;

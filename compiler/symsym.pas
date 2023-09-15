@@ -270,6 +270,7 @@ interface
           noregvarinitneeded : boolean;
           { not stored in PPU! }
           capture_sym : tsym;
+          scope_lvl : Integer; //use by inline variables, -1 -> out of scope, 0+ -> level of nesting of block
           constructor create(st:tsymtyp;const n : TSymStr;vsp:tvarspez;def:tdef;vopts:tvaroptions);
           constructor ppuload(st:tsymtyp;ppufile:tcompilerppufile);
           function globalasmsym: boolean;
@@ -2121,6 +2122,7 @@ implementation
          fillchar(initialloc,sizeof(initialloc),0);
          defaultconstsym:=nil;
          defaultconstsymderef.reset;
+         scope_lvl:=0;
       end;
 
 

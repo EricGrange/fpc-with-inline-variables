@@ -1051,6 +1051,8 @@ implementation
               end;
           end;
 
+         if token = _LKLAMMER then
+           Include(callflags, cnf_parameters_specified);
          { only need to get the address of the procedure? Check token because
            in the case of opening parenthesis is possible to get pointer to
            function result (lack of checking for token was the reason of
