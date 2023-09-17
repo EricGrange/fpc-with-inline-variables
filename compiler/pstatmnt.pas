@@ -162,18 +162,18 @@ implementation
             tarraydef(Result).elementdef := inline_detect_type_by_expr(tarrayconstructornode(expr).left);
           end;
         end
-        else if expr is tcallnode then //proc call
+        else if (expr is tcallnode) and (tcallnode(expr).procdefinition <> nil) then //proc call
         begin
-          if (cnf_parameters_specified in tcallnode(expr).callnodeflags) then // () after proc -> we want the result type
-            if tcallnode(expr).procdefinition <> nil then
-              Result := tcallnode(expr).procdefinition.returndef
-            else
-              Result := expr.resultdef
-          else //proc var (for func we still want to call)
-            if (tcallnode(expr).procdefinition <> nil) and not is_void(tcallnode(expr).procdefinition.returndef) then
-              Result := tcallnode(expr).procdefinition.returndef
-            else
-              Result := cprocvardef.getreusableprocaddr(tcallnode(expr).procdefinition, pc_normal);
+          if (cnf_parameters_specified in tcallnode(expr).callnodeflags) or not is_void(tcallnode(expr).procdefinition.returndef) then // Proc(); or Func; or Func(); -> we want the result type
+            Result := tcallnode(expr).procdefinition.returndef
+          else // Proc; -> we want proc var
+            Result := cprocvardef.getreusableprocaddr(tcallnode(expr).procdefinition, pc_normal);
+          
+          //constructors return TObject -> need more work
+          if potype_constructor = tcallnode(expr).procdefinition.proctypeoption then
+            if tcallnode(expr).methodpointer is tunarynode then
+              if tunarynode(tcallnode(expr).methodpointer).left is ttypenode then
+                Result := ttypenode(tunarynode(tcallnode(expr).methodpointer).left).typedef;
         end
         else if (expr is tloadnode) and (expr.resultdef is tprocdef) then //proc
         begin
