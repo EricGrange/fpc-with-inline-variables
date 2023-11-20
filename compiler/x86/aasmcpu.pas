@@ -659,6 +659,8 @@ interface
     function get_ref_address_size(const ref:treference):byte;
     function get_default_segment_of_ref(const ref:treference):tregister;
     procedure optimize_ref(var ref:treference; inlineasm: boolean);
+    { returns true if opcode can be used with one memory operand without size }
+    function NoMemorySizeRequired(opcode : TAsmOp) : Boolean;
 
     function spilling_create_load(const ref:treference;r:tregister):Taicpu;
     function spilling_create_store(r:tregister; const ref:treference):Taicpu;
@@ -4269,7 +4271,7 @@ implementation
                 then
                  objdata_writereloc(currval,2,currsym,currabsreloc)
                 else
-                 objdata.writebytes(currval,2);
+                 objdata.writeInt16LE(int16(currval));
               end;
             &34,&35,&36 :     // 034..036
               { !!! These are intended (and used in opcode table) to select depending
@@ -4280,21 +4282,21 @@ implementation
                 if assigned(currsym) then
                   objdata_writereloc(currval,2,currsym,currabsreloc)
                 else
-                  objdata.writebytes(currval,2);
+                  objdata.writeInt16LE(int16(currval));
 {$else i8086}
                 if opsize=S_Q then
                   begin
                     if assigned(currsym) then
                      objdata_writereloc(currval,8,currsym,currabsreloc)
                     else
-                     objdata.writebytes(currval,8);
+                     objdata.writeInt64LE(int64(currval));
                   end
                 else
                   begin
                     if assigned(currsym) then
                       objdata_writereloc(currval,4,currsym,currabsreloc32)
                     else
-                      objdata.writebytes(currval,4);
+                      objdata.writeInt32LE(int32(currval));
                   end
 {$endif i8086}
               end;
@@ -4308,7 +4310,7 @@ implementation
                 then
                  objdata_writereloc(currval,4,currsym,currabsreloc32)
                 else
-                 objdata.writebytes(currval,4);
+                 objdata.writeInt32LE(int32(currval));
               end;
             &44,&45,&46 :// 044..046 - select between word/dword/qword depending on
               begin      // address size (we support only default address sizes).
@@ -4317,17 +4319,17 @@ implementation
                 if assigned(currsym) then
                   objdata_writereloc(currval,8,currsym,currabsreloc)
                 else
-                  objdata.writebytes(currval,8);
+                  objdata.writeInt64LE(int64(currval));
 {$elseif defined(i386)}
                 if assigned(currsym) then
                   objdata_writereloc(currval,4,currsym,currabsreloc32)
                 else
-                  objdata.writebytes(currval,4);
+                  objdata.writeInt32LE(int32(currval));
 {$elseif defined(i8086)}
                 if assigned(currsym) then
                   objdata_writereloc(currval,2,currsym,currabsreloc)
                 else
-                  objdata.writebytes(currval,2);
+                  objdata.writeInt16LE(int16(currval));
 {$endif}
               end;
             &50,&51,&52 :   // 050..052 - byte relative operand
@@ -4349,7 +4351,7 @@ implementation
                 if assigned(currsym) then
                   objdata_writereloc(currval,8,currsym,currabsreloc)
                 else
-                  objdata.writebytes(currval,8);
+                  objdata.writeInt64LE(int64(currval));
               end;
             &60,&61,&62 :
               begin
@@ -4401,7 +4403,7 @@ implementation
                 if assigned(currsym) then
                   objdata_writereloc(currval,4,currsym,currabsreloc32)
                 else
-                  objdata.writebytes(currval,4);
+                  objdata.writeInt32LE(int32(currval));
               end;
             &300,&301,&302:
               begin
@@ -5580,6 +5582,32 @@ implementation
         end;
       end;
     end;
+
+
+    function NoMemorySizeRequired(opcode : TAsmOp) : Boolean;
+      var
+        i : LongInt;
+        insentry  : PInsEntry;
+      begin
+        result:=false;
+        i:=instabcache^[opcode];
+        if i=-1 then
+         begin
+           Message1(asmw_e_opcode_not_in_table,gas_op2str[opcode]);
+           exit;
+         end;
+        insentry:=@instab[i];
+        while (insentry^.opcode=opcode) do
+         begin
+           if (insentry^.ops=1) and (insentry^.optypes[0]=OT_MEMORY) then
+             begin
+               result:=true;
+               exit;
+             end;
+           inc(insentry);
+         end;
+      end;
+
 
     procedure InitAsm;
       begin

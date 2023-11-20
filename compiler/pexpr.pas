@@ -4487,7 +4487,7 @@ implementation
               end;
             procdef:
               begin
-                if block_type<>bt_body then
+                if not (block_type in [bt_body,bt_except]) then
                   begin
                     message(parser_e_illegal_expression);
                     gensym:=generrorsym;
@@ -5014,6 +5014,7 @@ implementation
       s : string;
       pw : pcompilerwidestring;
       pc : pansichar;
+      len : Integer;
 
     begin
       get_stringconst:='';
@@ -5028,7 +5029,9 @@ implementation
       else if (tstringconstnode(p).cst_type in [cst_unicodestring,cst_widestring]) then
          begin
            pw:=pcompilerwideString(tstringconstnode(p).value_str);
-           pc:=getmem(getlengthwidestring(pw));
+           len:=getlengthwidestring(pw);
+           pc:=getmem(Len+1);
+           pc[len]:=#0;
            unicode2ascii(pw,pc,current_settings.sourcecodepage);
            get_stringconst:=strpas(pc);
            freemem(pc);

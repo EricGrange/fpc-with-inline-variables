@@ -1366,7 +1366,7 @@ uses
         err : boolean;
         i,
         gencount : longint;
-        countstr,genname,ugenname : string;
+        countstr,genname,ugenname,prettygenname: string;
         tmpstack : tfpobjectlist;
         symowner : tsymtable;
         hmodule : tmodule;
@@ -1477,6 +1477,7 @@ uses
         countstr:='';
         str(context.paramlist.Count,countstr);
 
+        prettygenname:=genname;
         genname:=genname+'$'+countstr;
         ugenname:=upper(genname);
 
@@ -1534,7 +1535,7 @@ uses
 
         if not found or not (context.sym.typ in [typesym,procsym]) then
           begin
-            identifier_not_found(genname);
+            identifier_not_found(prettygenname);
             if not try_to_consume(_GT) then
               try_to_consume(_RSHARPBRACKET);
             context.free;
@@ -2751,7 +2752,22 @@ uses
               interface is still being parsed and thus the localsymtable is in
               reality the global symtable }
             if pu.u.in_interface then
-              symtablestack.push(pu.u.localsymtable)
+              begin
+                {
+                  MVC: The case where localsymtable is also nil can appear in complex cases and still produce valid code.
+                  In order to allow people in this case to continue, SKIP_INTERNAL20231102 can be defined.
+                  Default behaviour is to raise an internal error.
+                  See also
+                  https://gitlab.com/freepascal.org/fpc/source/-/issues/40502
+                }
+                {$IFDEF SKIP_INTERNAL20231102}
+                if (pu.u.localsymtable<>Nil) then
+                {$ELSE}
+                if (pu.u.localsymtable=Nil) then
+                  internalerror(20231102);
+                {$ENDIF}
+                  symtablestack.push(pu.u.localsymtable);
+              end
             else
               internalerror(200705153)
           else

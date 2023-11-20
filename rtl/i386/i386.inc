@@ -440,6 +440,7 @@ function IndexByte_Dispatch(const buf;len:SizeInt;b:byte):SizeInt; forward;
 
 var
   IndexByte_Impl: function(const buf;len:SizeInt;b:byte):SizeInt = @IndexByte_Dispatch;
+{$define has_i386_IndexByte_Impl} { used in assembler to manually inline IndexByte }
 
 function IndexByte_Dispatch(const buf;len:SizeInt;b:byte):SizeInt;
 begin
@@ -750,6 +751,38 @@ end;
 {$endif FPC_SYSTEM_HAS_INDEXDWORD}
 
 
+{$ifndef FPC_SYSTEM_HAS_INDEXQWORD}
+{$define FPC_SYSTEM_HAS_INDEXQWORD}
+function IndexQWord(const buf;len:SizeInt;b:QWord):SizeInt; assembler; nostackframe;
+{ eax = buf, edx = len, [esp+4] = b }
+asm
+        push    %ebx
+        mov     8(%esp), %ecx { ecx = b[0:31] }
+        mov     12(%esp), %ebx { ebx = b[32:63] }
+        mov     %eax, 8(%esp) { remember original buf }
+        sub     $8, %eax
+
+.balign 16 { no-op }
+.LQWordwise_Next:
+        add     $8, %eax
+        sub     $1, %edx
+        jb      .LNotFound
+        cmp     %ecx, (%eax)
+        jne     .LQWordwise_Next
+        cmp     %ebx, 4(%eax)
+        jne     .LQWordwise_Next
+        sub     8(%esp), %eax
+        pop     %ebx
+        shr     $3, %eax
+        ret     $8
+
+.LNotFound:
+        pop     %ebx
+        mov     $-1, %eax
+end;
+{$endif FPC_SYSTEM_HAS_INDEXQWORD}
+
+
 {$ifndef FPC_SYSTEM_HAS_COMPAREBYTE}
 {$define FPC_SYSTEM_HAS_COMPAREBYTE}
 function CompareByte_Plain(Const buf1,buf2;len:SizeInt):SizeInt; assembler; nostackframe;
@@ -838,125 +871,230 @@ end;
 
 function CompareByte_SSE2(const buf1, buf2; len: SizeInt): SizeInt; assembler; nostackframe;
 asm
-        cmp      $3, %ecx
-        push     %esi
-        lea      (%eax,%ecx), %esi { esi = buf1 end }
-        jle      .LBytewise_Test
+        { eax = buf1, edx = buf2, ecx = len }
+        cmp      $1, %ecx
+        jle      .L1OrLess
+
         push     %ebx
-        and      $-16, %ecx
-        lea      (%eax,%ecx), %ebx { ebx = end of full XMMs in buf1 }
-        cmp      %ebx, %eax
-        jne      .L16x_Body
-        lea      15(%ebx), %eax { check if tails don't cross page boundaries and can be over-read to XMMs }
-        lea      15(%edx), %ecx
-        xor      %ebx, %eax
-        xor      %edx, %ecx
-        or       %ecx, %eax
-        cmp      $4095, %eax
+        cmp      $16, %ecx
+        jae      .LVecOrMore
+
+        { 2 to 15 bytes: check for page cross. Pessimistic variant that has false positives, but uses 1 less register and 2 less instructions. }
+        mov      %eax, %ebx
+        or       %edx, %ebx
+        and      $4095, %ebx
+        cmp      $4080, %ebx
         ja       .LCantOverReadBoth
-        movdqu   (%ebx), %xmm0
-        movdqu   (%edx), %xmm2
-        pcmpeqb  %xmm2, %xmm0
-        pmovmskb %xmm0, %eax
-        xor      $65535, %eax
-        jz       .LReturnEAX
-        bsf      %eax, %ecx
-        add      %ecx, %ebx
-        cmp      %esi, %ebx { ignore over-read garbage bytes }
-        jnb      .L16x_Nothing
-        movzbl   (%ebx), %eax
-        movzbl   (%edx,%ecx), %edx
+
+        { Over-read both as XMMs. }
+        movdqu   (%eax), %xmm0
+        movdqu   (%edx), %xmm1
+        pcmpeqb  %xmm1, %xmm0
+        pmovmskb %xmm0, %ebx
+        inc      %bx { Here and below, 2-byte 'inc r16' after 'pmovmskb' can be replaced with 5-byte 'add $1, r16' or 6-byte 'xor $65535, r32'. }
+        jz       .LNothing
+        bsf      %ebx, %ebx
+        cmp      %ecx, %ebx { Ignore garbage beyond 'len'. }
+        jae      .LNothing
+        movzbl   (%eax,%ebx), %eax
+        movzbl   (%edx,%ebx), %edx
         sub      %edx, %eax
-.LReturnEAX:
         pop      %ebx
-        pop      %esi
         ret
 
-.balign 16
-.L16x_Body:
-        movdqu   (%edx), %xmm0
-        movdqu   (%eax), %xmm1
-        pcmpeqb  %xmm1, %xmm0
-        pmovmskb %xmm0, %ecx
-        xor      $65535, %ecx
-        jnz      .L16x_Found
-        add      $16, %eax
-        add      $16, %edx
-        cmp      %eax, %ebx
-        jne      .L16x_Body
-
-        cmp      %ebx, %esi
-        je       .L16x_Nothing
-
-        sub      %eax, %edx
-        lea      -16(%esi), %eax
-        add      %eax, %edx
-        movdqu   (%edx), %xmm0
-        movdqu   (%eax), %xmm1
-        pcmpeqb  %xmm1, %xmm0
-        pmovmskb %xmm0, %ecx
-        xor      $65535, %ecx
-        jnz      .L16x_Found
-.L16x_Nothing:
+.LNothing:
         pop      %ebx
         xor      %eax, %eax
-        pop      %esi
         ret
 
-.balign 16
-.L16x_Found:
-        bsf      %ecx, %ecx
+.LVecOrMore:
+        { Compare first vectors. }
+        movdqu   (%eax), %xmm0
+        movdqu   (%edx), %xmm1
+        pcmpeqb  %xmm1, %xmm0
+        pmovmskb %xmm0, %ebx
+        inc      %bx
+        jnz      .LVec0Differs
+
+        sub      $32, %ecx { now ecx is len - 32... mostly just to save bytes on offsets improving .LAligned32xLoop_Body alignment :) }
+        jbe      .LLastVec
+
+        { Compare second vectors. }
+        movdqu   16(%eax), %xmm0
+        movdqu   16(%edx), %xmm1
+        pcmpeqb  %xmm1, %xmm0
+        pmovmskb %xmm0, %ebx
+        inc      %bx
+        jnz      .LVec1Differs
+
+        { More than four vectors: aligned loop. }
+        cmp      $32, %ecx
+        ja       .LAligned32xLoop_Prepare
+
+        { Compare last two vectors. }
+        movdqu   (%eax,%ecx), %xmm0
+        movdqu   (%edx,%ecx), %xmm1
+        pcmpeqb  %xmm1, %xmm0
+        pmovmskb %xmm0, %ebx
+        inc      %bx
+        jnz      .LVecEm2Differs
+.LLastVec:
+        movdqu   16(%eax,%ecx), %xmm0
+        movdqu   16(%edx,%ecx), %xmm1
+        pcmpeqb  %xmm1, %xmm0
+        pmovmskb %xmm0, %ebx
+        inc      %bx
+        jnz      .LVecEm1Differs
         pop      %ebx
-        movzbl   (%eax,%ecx), %eax
-        movzbl   (%edx,%ecx), %edx
-        pop      %esi
+        xor      %eax, %eax
+        ret
+
+.LVecEm2Differs:
+        sub      $16, %ecx
+.LVecEm1Differs:
+        bsf      %ebx, %ebx
+        add      %ecx, %ebx
+        movzbl   16(%eax,%ebx), %eax
+        movzbl   16(%edx,%ebx), %edx
         sub      %edx, %eax
+        pop      %ebx
+        ret
+        nop      { Turn .balign 16 before .LAligned32xLoop_Body into a no-op. }
+
+.LAligned32xLoop_Prepare:
+        lea      -32(%eax,%ecx), %ecx { buffer end - last two vectors handled separately - first two vectors already analyzed (by the fact ecx was still len - 32) }
+        sub      %eax, %edx { edx = buf2 - buf1 }
+        and      $-16, %eax { Align buf1. First two vectors already analyzed are skipped by +32 on the first loop iteration. }
+        sub      %eax, %ecx { ecx = count to be handled with loop }
+.balign 16 { No-op. }
+.LAligned32xLoop_Body:
+        add      $32, %eax
+        { Compare two XMMs, reduce the result with 'and'. }
+        movdqu   (%edx,%eax), %xmm0
+        pcmpeqb  (%eax), %xmm0 { xmm0 = pcmpeqb(buf1, buf2) }
+        movdqu   16(%edx,%eax), %xmm1
+        pcmpeqb  16(%eax), %xmm1
+        pand     %xmm0, %xmm1 { xmm1 = xmm0 and pcmpeqb(buf1 + 16, buf2 + 16) }
+        pmovmskb %xmm1, %ebx
+        inc      %bx
+        jnz      .LAligned32xLoop_TwoVectorsDiffer
+        sub      $32, %ecx
+        ja       .LAligned32xLoop_Body
+
+        { Compare last two vectors after the loop by doing one more loop iteration, modified. }
+        lea      32(%eax,%ecx), %eax
+        movdqu   (%edx,%eax), %xmm0
+        movdqu   (%eax), %xmm2
+        pcmpeqb  %xmm2, %xmm0
+        movdqu   16(%edx,%eax), %xmm1
+        movdqu   16(%eax), %xmm2
+        pcmpeqb  %xmm2, %xmm1
+        pand     %xmm0, %xmm1
+        pmovmskb %xmm1, %ebx
+        inc      %bx
+        jnz      .LAligned32xLoop_TwoVectorsDiffer
+        pop      %ebx
+        xor      %eax, %eax
+        ret
+
+.LAligned32xLoop_TwoVectorsDiffer:
+        add      %eax, %edx { restore edx = buf2 }
+        pmovmskb %xmm0, %ecx { Is there a difference in the first vector? }
+        inc      %cx
+        jz       .LVec1Differs { No difference in the first vector, xmm0 is all ones, ebx = pmovmskb(pcmpeqb(buf1 + 16, buf2 + 16)) from the loop body. }
+        bsf      %ecx, %ebx
+        movzbl   (%eax,%ebx), %eax
+        movzbl   (%edx,%ebx), %edx
+        sub      %edx, %eax
+        pop      %ebx
+        ret
+
+.LVec1Differs:
+        add      $16, %eax
+        add      $16, %edx
+.LVec0Differs:
+        bsf      %ebx, %ebx
+        movzbl   (%eax,%ebx), %eax
+        movzbl   (%edx,%ebx), %edx
+        sub      %edx, %eax
+        pop      %ebx
         ret
 
 .LCantOverReadBoth:
-        mov      %esi, %eax
-        sub      %ebx, %eax
-        and      $-4, %eax
-        add      %ebx, %eax
-        cmp      %eax, %ebx
-        je       .LPopEbxAndGoBytewise
-.L4x_Body:
-        mov      (%ebx), %ecx
-        cmp      (%edx), %ecx
-        jne      .L4x_Found
-        add      $4, %ebx
-        add      $4, %edx
-        cmp      %ebx, %eax
-        jne      .L4x_Body
-.LPopEbxAndGoBytewise:
-        pop      %ebx
-.LBytewise_Test:
-        cmp      %esi, %eax
-        je       .LBytewise_Nothing
-.LBytewise_Body:
-        movzbl   (%edx), %ecx
-        cmp      (%eax), %cl
-        jne      .LDoSbb
-        add      $1, %eax
-        add      $1, %edx
-        cmp      %esi, %eax
-        jne      .LBytewise_Body
-.LBytewise_Nothing:
-        xor      %eax, %eax
+        cmp      $3, %ecx
+        jle      .L2to3
+        push     %esi
+        mov      (%eax), %ebx
+        mov      (%edx), %esi
+        cmp      %esi, %ebx
+        jne      .L4xDiffer
+        cmp      $8, %ecx
+        jbe      .LLast4x
+        mov      4(%eax), %ebx
+        mov      4(%edx), %esi
+        cmp      %esi, %ebx
+        jne      .L4xDiffer
+        mov      -8(%eax,%ecx), %ebx
+        mov      -8(%edx,%ecx), %esi
+        cmp      %esi, %ebx
+        jne      .L4xDiffer
+.LLast4x:
+        mov      -4(%eax,%ecx), %ebx
+        mov      -4(%edx,%ecx), %esi
+        cmp      %esi, %ebx
+        jne      .L4xDiffer
         pop      %esi
+        pop      %ebx
+        xor      %eax, %eax
         ret
 
-.L4x_Found:
-        mov      (%edx), %eax
-        bswap    %ecx
-        bswap    %eax
-        cmp      %ecx, %eax
-        pop      %ebx
-.LDoSbb:
-        sbb      %eax, %eax
-        and      $2, %eax
-        sub      $1, %eax
+.L4xDiffer:
+        bswap    %ebx
+        bswap    %esi
+        cmp      %esi, %ebx
         pop      %esi
+        sbb      %eax, %eax
+        or       $1, %eax
+        pop      %ebx
+        ret
+
+.L2to3:
+        movzwl   (%edx), %ebx
+        bswap    %ebx
+        shr      $1, %ebx
+        mov      -1(%edx,%ecx), %bl
+        movzwl   (%eax), %edx
+        bswap    %edx
+        shr      $1, %edx
+        mov      -1(%eax,%ecx), %dl
+        mov      %edx, %eax
+        sub      %ebx, %eax
+        pop      %ebx
+        ret
+
+.L1OrLess:
+        jl       .LUnbounded_Prepare
+        movzbl   (%eax), %eax
+        movzbl   (%edx), %edx
+        sub      %edx, %eax
+        ret
+
+.LUnbounded_Prepare:
+        sub      %eax, %edx { edx = buf2 - buf1 }
+        test     %ecx, %ecx
+        jnz      .LUnbounded_Body
+        xor      %eax, %eax
+        ret
+
+.balign 16
+.LUnbounded_Next:
+        add      $1, %eax
+.LUnbounded_Body:
+        movzbl   (%edx,%eax), %ecx
+        cmp      %cl, (%eax)
+        je       .LUnbounded_Next
+        sbb      %eax, %eax
+        or       $1, %eax
 end;
 
 function CompareByte_Dispatch(const buf1, buf2; len: SizeInt): SizeInt; forward;
@@ -1519,8 +1657,10 @@ end;
 {$ifndef FPC_SYSTEM_HAS_FPC_PCHAR_TO_SHORTSTR}
 {$define FPC_SYSTEM_HAS_FPC_PCHAR_TO_SHORTSTR}
 procedure fpc_pchar_to_shortstr(out res : shortstring;p:PAnsiChar);assembler;[public,alias:'FPC_PCHAR_TO_SHORTSTR']; compilerproc;
-var
-  saveres,saveebx,saveesi,saveedi : longint;
+{$ifndef FPC_PROFILE}
+  nostackframe;
+{$endif}
+// eax = res, edx = high(res), ecx = p
 asm
 {$ifdef FPC_PROFILE}
         push  %eax
@@ -1531,87 +1671,65 @@ asm
         pop   %edx
         pop   %eax
 {$endif FPC_PROFILE}
-        movl    %ebx,saveebx
-        movl    %esi,saveesi
-        movl    %edi,saveedi
-        movl    %ecx,%esi
-        movl    %eax,%edi
-        movl    %edi,saveres
-        movl    $1,%ecx
-        testl   %esi,%esi
-        movl    %esi,%eax
-        jz      .LStrPasDone
-        leal    3(%esi),%edx
-        andl    $-4,%edx
-        // skip length byte
-        incl    %edi
-        subl    %esi,%edx
-        jz      .LStrPasAligned
-        // align source to multiple of 4 (not dest, because we can't read past
-        // the end of the source, since that may be past the end of the heap
-        // -> sigsegv!!)
-.LStrPasAlignLoop:
-        movb    (%esi),%al
-        incl    %esi
-        testb   %al,%al
-        jz      .LStrPasDone
-        incl    %edi
-        incb    %cl
-        decb    %dl
-        movb    %al,-1(%edi)
-        jne     .LStrPasAlignLoop
-        .balign  16
-.LStrPasAligned:
-        movl    (%esi),%ebx
-        addl    $4,%edi
-        leal    0x0fefefeff(%ebx),%eax
-        movl    %ebx,%edx
-        addl    $4,%esi
-        notl    %edx
-        andl    %edx,%eax
-        addl    $4,%ecx
-        andl    $0x080808080,%eax
-        movl    %ebx,-4(%edi)
-        jnz     .LStrPasEndFound
-        cmpl    $252,%ecx
-        ja      .LStrPasPreEndLoop
-        jmp     .LStrPasAligned
-.LStrPasEndFound:
-        subl    $4,%ecx
-        // this won't overwrite data since the result = 255 AnsiChar string
-        // and we never process more than the first 255 chars of p
-        shrl    $8,%eax
-        jc      .LStrPasDone
-        incl    %ecx
-        shrl    $8,%eax
-        jc      .LStrPasDone
-        incl    %ecx
-        shrl    $8,%eax
-        jc      .LStrPasDone
-        incl    %ecx
-        jmp     .LStrPasDone
-.LStrPasPreEndLoop:
-        testb   %cl,%cl
-        jz      .LStrPasDone
-        movl    (%esi),%eax
-.LStrPasEndLoop:
-        testb   %al,%al
-        jz      .LStrPasDone
-        movb    %al,(%edi)
-        shrl    $8,%eax
-        incl    %edi
-        incb    %cl
-        jnz     .LStrPasEndLoop
-.LStrPasDone:
-        movl    saveres,%edi
-        addb    $255,%cl
-        movb    %cl,(%edi)
-        movl    saveesi,%esi
-        movl    saveedi,%edi
-        movl    saveebx,%ebx
+        test    %ecx, %ecx
+        jz      .LEmpty
+        push    %eax { save res }
+        push    %ecx { save p }
+        push    %edx { save high(res) }
+        mov     %ecx, %eax { eax = IndexByte.buf }
+        { edx is already high(res) = IndexByte.count.
+          Careful: using high(res) instead of -1 limits the scan by high(res) which is a good thing,
+          but assumes that IndexByte is “safe” and won’t read potentially invalid memory past the searched byte even if formally (and wrongly) allowed by ‘count’.
+          Generic and x86 versions are “safe”. }
+        xor     %ecx, %ecx { ecx = 0 = IndexByte.value }
+        { Stack is already aligned on 16 bytes if the function is nostackframe: return address + push eax + push ecx + push edx.
+          With a stack frame, there is an additional push ebp and need 12 more bytes to align. }
+{$if defined(FPC_SYSTEM_STACKALIGNMENT16) and defined(FPC_PROFILE)}
+        leal    -12(%esp), %esp
+{$endif defined(FPC_SYSTEM_STACKALIGNMENT16) and defined(FPC_PROFILE)}
+{$if defined(FPC_PIC) or not defined(has_i386_IndexByte_Impl)}
+        call    IndexByte
+{$else}
+        call    IndexByte_Impl { manually inline IndexByte }
+{$endif}
+{$if defined(FPC_SYSTEM_STACKALIGNMENT16) and defined(FPC_PROFILE)}
+        leal    12(%esp), %esp
+{$endif defined(FPC_SYSTEM_STACKALIGNMENT16) and defined(FPC_PROFILE)}
+        pop     %ecx { ecx = high(res) = Move.len }
+        test    %eax, %eax { If IndexByte result (eax) is non-negative (terminator is among first high(res) characters), use it, otherwise keep high(res). }
+{$ifdef CPUX86_HAS_CMOV}
+        cmovns  %eax, %ecx
+{$else}
+        js      .LEcxIsLen
+        mov     %eax, %ecx
+.LEcxIsLen:
+{$endif}
+        pop     %eax { pop p to eax = Move.src }
+        pop     %edx { pop res to edx }
+        mov     %cl, (%edx) { res[0] := len }
+        inc     %edx { res[1] = Move.dst }
+{$ifdef FPC_PROFILE}
+{$ifdef FPC_SYSTEM_STACKALIGNMENT16}
+        leal    -12(%esp), %esp
+{$endif FPC_SYSTEM_STACKALIGNMENT16}
+        call    Move
+{$ifdef FPC_SYSTEM_STACKALIGNMENT16}
+        leal    12(%esp), %esp
+{$endif FPC_SYSTEM_STACKALIGNMENT16}
+        jmp     .LReturn
+{$else FPC_PROFILE}
+        jmp     Move { can perform a tail call }
+{$endif FPC_PROFILE}
+
+.LEmpty:
+        movb    $0, (%eax)
+{$ifdef FPC_PROFILE}
+.LReturn:
+{$endif}
 end;
 {$endif FPC_SYSTEM_HAS_FPC_PCHAR_TO_SHORTSTR}
 
+{$undef has_i386_IndexByte_Impl} { no longer required }
 
 {$IFNDEF INTERNAL_BACKTRACE}
 {$define FPC_SYSTEM_HAS_GET_FRAME}
@@ -1973,18 +2091,19 @@ Procedure SysResetFPU;
 { because of the brain dead sse detection on x86, this test is post poned }
 procedure fpc_cpucodeinit;
   var
-    _ecx,_edx : longint;
+    _eax,_ecx_cpuid1,_edx_cpuid1,_ebx : longint;
   begin
     if cpuid_support then
       begin
         asm
             movl $1,%eax
+            xorl %ecx,%ecx
             cpuid
-            movl %edx,_edx
-            movl %ecx,_ecx
+            movl %edx,_edx_cpuid1
+            movl %ecx,_ecx_cpuid1
         end ['ebx'];
-        has_mmx_support:=(_edx and $800000)<>0;
-        if ((_edx and $2000000)<>0) then
+        has_mmx_support:=(_edx_cpuid1 and $800000)<>0;
+        if ((_edx_cpuid1 and $2000000)<>0) then
           begin
             os_supports_sse:=true;
             sse_check:=true;
@@ -2003,8 +2122,34 @@ procedure fpc_cpucodeinit;
           end;
         if has_sse_support then
           begin
-            has_sse2_support:=((_edx and $4000000)<>0);
-            has_sse3_support:=((_ecx and $200)<>0);
+            has_sse2_support:=((_edx_cpuid1 and $4000000)<>0);
+            has_sse3_support:=((_ecx_cpuid1 and $200)<>0);
+
+            { now avx }
+            asm
+              xorl %eax,%eax
+              cpuid
+              movl %eax,_eax
+            end;
+            if _eax>=7 then
+              begin
+                asm
+                  xorl %ecx,%ecx
+                  .byte   0x0f,0x01,0xd0 { xgetbv }
+                  movl %eax,_eax
+                end;
+                if (_eax and 6)=6 then
+                  begin
+                    has_avx_support:=(_ecx_cpuid1 and $10000000)<>0;
+                    asm
+                      movl $7,%eax
+                      xorl %ecx,%ecx
+                      cpuid
+                      movl %ebx,_ebx
+                    end;
+                    has_avx2_support:=(_ebx and $20)<>0;
+                  end;
+              end;
           end;
       end;
 

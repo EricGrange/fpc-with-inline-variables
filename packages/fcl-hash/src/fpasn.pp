@@ -1,3 +1,16 @@
+{
+  This file is part of the Free Component Library.
+  Copyright (c) 2023 by the Free Pascal team.
+
+  ASN routines.
+
+  See the file COPYING.FPC, included in this distribution,
+  for details about the copyright.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+}
 {$IFNDEF FPC_DOTTEDUNITS}
 unit fpasn;
 {$ENDIF FPC_DOTTEDUNITS}
@@ -961,8 +974,10 @@ var
   P, EndP: PByte;
   O : Tbytes;
 begin
+  {$IFDEF ASN1_DEBUG}
   ASNDebug(Buffer,O);
   Writeln(TEncoding.UTF8.GetAnsiString(O));
+  {$ENDIF}
   if length(Buffer)=0 then exit;
   P:=@Buffer[0];
   EndP:=P+length(Buffer);

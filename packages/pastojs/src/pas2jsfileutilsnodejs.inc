@@ -194,8 +194,5 @@ begin
   Result:=GetDefaultTextEncoding;
 end;
 
-procedure InitPlatform;
-begin
-
 end;
 

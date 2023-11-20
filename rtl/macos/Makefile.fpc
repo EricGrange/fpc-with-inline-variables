@@ -40,16 +40,10 @@ PROCINC=../$(CPU_TARGET)
 UNIXINC=../unix
 PPUEXT=pput
 ASMEXT=.s
+DYNLIBS_DEPS_OS=$(DLUNIT)$(PPUEXT)
+DYNLIBSINCDIR=$(UNIXINC)
 
 UNITPREFIX=rtl
-SYSTEMUNIT=system
-
-# Use new feature from 1.0.5 version
-# that generates release PPU files
-# which will not be recompiled
-ifdef RELEASE
-override FPCOPT+=-Ur
-endif
 
 # Paths
 OBJPASDIR=$(RTL)/objpas

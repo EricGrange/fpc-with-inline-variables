@@ -6,7 +6,7 @@
 main=rtl
 
 [target]
-units=$(SYSTEMUNIT) $(UUCHARUNIT) $(FPINTRESUNIT) ctypes objpas $(MACPASUNIT) $(ISO7185UNIT) $(EXTPASUNIT) $(STRINGSUNIT) \
+units=$(SYSTEMUNIT) $(UUCHARUNIT) $(FPINTRESUNIT) $(CTYPESUNIT) $(OBJPASUNIT) $(MACPASUNIT) $(ISO7185UNIT) $(EXTPASUNIT) $(STRINGSUNIT) \
       $(CPU_UNITS)  $(HEAPTRCUNIT) $(LINEINFOUNIT) \
       $(WINDOWSUNIT) $(MESSAGESUNIT) $(DYNLIBSUNIT) \
       $(DOSUNIT) \
@@ -17,13 +17,12 @@ units=$(SYSTEMUNIT) $(UUCHARUNIT) $(FPINTRESUNIT) ctypes objpas $(MACPASUNIT) $(
       $(CMEMUNIT)  $(SHARMEMUNIT) \
       $(SOFTFPUUNIT) $(SFPUX80UNIT) $(UFLOATX80UNIT) $(SFPU128UNIT) $(UFLOAT128UNIT)
 
-#    initc  signals \
-#    crt graph \
+#    $(INITCUNIT)  signals \
 #    wincrt winmouse winevent  printer \
 #    video mouse keyboard \
 #    winsysut
 
-# rsts=math varutils typinfo variants classes dateutils sysconst
+# rsts=$(MATHUNIT) $(TYPINFOUNIT) $(CLASSESUNIT) $(SYSCONSTUNIT)
 implicitunits=$(EXEINFOUNIT) $(CP_UNITS) $(UNICODEDATAUNIT)
 
 # fake dll
@@ -53,20 +52,12 @@ WININC=$(WINDIR)/wininc
 
 UNITPREFIX=rtl
 
-SYSTEMUNIT=system
 PRT0=wprt0
 
 ifeq ($(ARCH),i386)
 CPU_UNITS=$(CPUUNIT) $(MMXUNIT)
 CPU_DEPS_CPU=$(SYSUTILSUNIT)$(PPUEXT) 
 MMX_DEPS_CPU=$(CPUUNIT)$(PPUEXT) 
-endif
-
-# Use new feature from 1.0.5 version
-# that generates release PPU files
-# which will not be recompiled
-ifdef RELEASE
-override FPCOPT+=-Ur
 endif
 
 # Paths
@@ -83,6 +74,8 @@ SYSUTILSDIR=.
 SYSUTILS_OPT=-Fi../win
 SYSUTILS_DEPS_OS=$(WINDOWSUNIT)$(PPUEXT) 
 FPWIDESTRING_DEPS_OS=$(WINDOWSUNIT)$(PPUEXT)
+TYPES_DEPS_OS=$(WINDOWSUNIT)$(PPUEXT)
+TTHREADINCDIR=$(WINDIR)
 
 [rules]
 .NOTPARALLEL:
@@ -112,9 +105,9 @@ SYSDEPS=$(SYSINCDEPS) $(SYSCPUDEPS) winres.inc
 
 WINMESSAGESDIR=$(OSDIR)
 
-sharemem$(PPUEXT) : $(WINDIR)/sharemem.pp system$(PPUEXT)
+sharemem$(PPUEXT) : $(WINDIR)/sharemem.pp $(SYSTEMUNIT)$(PPUEXT)
         $(COMPILER) $(WINDIR)/sharemem.pp
 
-fpcmemdll.dll : $(WINDIR)/fpcmemdll.pp system$(PPUEXT)
+fpcmemdll.dll : $(WINDIR)/fpcmemdll.pp $(SYSTEMUNIT)$(PPUEXT)
         $(COMPILER) $(WINDIR)/fpcmemdll.pp
 

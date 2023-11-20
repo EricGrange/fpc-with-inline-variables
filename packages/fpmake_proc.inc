@@ -833,6 +833,13 @@ begin
 {$include vcl-compat/fpmake.pp}
 end;
 
+procedure add_libpcre(const ADirectory: string);
+begin
+  with Installer do
+{$include libpcre/fpmake.pp}
+end;
+
+
 procedure add_qlunits(const ADirectory: string);
 begin
   with Installer do
@@ -849,6 +856,12 @@ procedure add_wasmtime(const ADirectory: string);
 begin
   with Installer do
 {$include wasmtime/fpmake.pp}
+end;
+
+procedure add_wasmedge(const ADirectory: string);
+begin
+  with Installer do
+{$include wasmedge/fpmake.pp}
 end;
 
 procedure add_gstreamer(const ADirectory: string);

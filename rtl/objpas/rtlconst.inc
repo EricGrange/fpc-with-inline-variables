@@ -18,6 +18,10 @@ unit RtlConsts;
 
 interface
 
+Const
+  SEmpty : string = 'Empty';  
+
+
 ResourceString
 
 { ---------------------------------------------------------------------
@@ -33,6 +37,8 @@ ResourceString
   SAllButton                    = '&All';
   SAllFilter                    = 'All files';
   SAncestorNotFound             = 'Ancestor class for "%s" not found';
+  SArgumentInvalid              = 'Invalid argument';
+  SArgumentNil                  = 'Argument must not be nil';
   SAssignError                  = 'Cannot assign a %s to a %s';
   SAsyncSocketError             = 'Asynchronous socket error: %d';
   SBG                           = 'BG';
@@ -167,6 +173,7 @@ ResourceString
   SInvalidImage                 = 'Invalid stream format';
   SInvalidImageList             = 'Invalid ImageList';
   SInvalidImageSize             = 'Invalid image size';
+  SInvalidKnownFilename         = 'Invalid filename - %s';
   SInvalidMask                  = '"%s" is not a valid mask at (%d)';
   SInvalidMemoSize              = 'Text larger than memo capacity';
   SInvalidMetafile              = 'Invalid Metafile';
@@ -567,7 +574,21 @@ ResourceString
   SMsgDlgYes = '&Yes';
   SMsgDlgYesToAll = 'Yes to a&ll';
 
-
+  // Constants for Delphi compatibility
+  sAttributeExists = 'Attribute ''%s'' already exists';
+  sDeviceExists = 'Device ''%s'' already exists';
+  sCannotManuallyConstructDevice = 'Manual construction of TDeviceInfo is not supported'; 
+  SArgumentOutOfRange = 'Argument out of range';
+  StrNoClientClass = 'The client cannot be an instance of the class %s';  
+  SListIndexErrorExt = 'List index out of bounds (%0:d).  %2:s object range is 0..%1:d';
+  
+  { Classes observer support }
+  SErrNotIObserverInterface = 'Interface is not an IObserver interface';
+  SErrUnsupportedObserver = 'Observer type not supported';
+  SErrOnlyOneEditingObserverAllowed = 'Only one editing link observer is allowed';
+  SErrObserverNoSinglecast = 'No singlecast observer interface found';
+  SerrObserverNoMulticastFound = 'No multicast observer interface (%d) found';
+  SErrObserverNotAvailable = 'Observer type (%d) not available';
 implementation
 
 end.

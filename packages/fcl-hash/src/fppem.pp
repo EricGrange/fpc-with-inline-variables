@@ -1,3 +1,16 @@
+{
+  This file is part of the Free Component Library.
+  Copyright (c) 2023 by the Free Pascal team.
+
+  PEM key management
+
+  See the file COPYING.FPC, included in this distribution,
+  for details about the copyright.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+}
 {$IFNDEF FPC_DOTTEDUNITS}
 unit fppem;
 {$ENDIF FPC_DOTTEDUNITS}
@@ -156,7 +169,7 @@ begin
   ASNParsePemSection(Buffer, List, _BEGIN_EC_PRIVATE_KEY, _END_EC_PRIVATE_KEY);
   if List.Count < 7 then
     Exit;
-  Writeln(List.Text);
+//  Writeln(List.Text);
   CurveOID := List.Strings[4];
   Result := (CurveOID=ASN_secp256r1);
 end;

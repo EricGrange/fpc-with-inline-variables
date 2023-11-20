@@ -21,12 +21,12 @@ Selector 	Example 	Example description
 .class1 .class2 	.name1 .name2 	Selects all elements with name2 that is a descendant of an element with name1
 #id 	#firstname 	Selects the element with name="firstname"
 * 	* 	Selects all elements
-element 	p 	Selects all <p> elements
-element.class 	p.intro 	Selects all <p> elements with class="intro"
-element,element 	div, p 	Selects all <div> elements and all <p> elements
-element element 	div p 	Selects all <p> elements inside <div> elements
-element>element 	div > p 	Selects all <p> elements where the parent is a <div> element
-element+element 	div + p 	Selects the first <p> element that is placed immediately after <div> elements
+type 	p 	Selects all <p> elements
+type.class 	p.intro 	Selects all <p> elements with class="intro"
+type,type 	div, p 	Selects all <div> elements and all <p> elements
+type type 	div p 	Selects all <p> elements inside <div> elements
+type>type 	div > p 	Selects all <p> elements where the parent is a <div> element
+type+type 	div + p 	Selects the first <p> element that is placed immediately after a <div> element
 element1~element2 	p ~ ul 	Selects every <ul> element that is preceded by a <p> element
 [attribute] 	[target] 	Selects all elements with a target attribute
 [attribute=value] 	[target=_blank] 	Selects all elements with target="_blank"
@@ -63,29 +63,31 @@ ToDo:
 - 'all' attribute: resets all properties, except direction and unicode bidi
 - :has()
 - TCSSResolver.FindComputedAttribute  use binary search for >8 elements
+- TCSSNumericalIDs: once initialized sort and use binary search
 - namespaces
 - layers
+- --varname
+- counter-reset
+- counter-increment
 - @rules:-----------------------------------------------------------------------
-- @media
-- @font-face
-- @keyframes
-- columns combinator ||     col.selected || td
-- :nth-col()
-- :nth-last-col()
+  - @media
+  - @font-face
+  - @keyframes
 - Pseudo-elements - not case sensitive:-----------------------------------------
- - ::first-letter 	p::first-letter 	Selects the first letter of every <p> element
- - ::first-line 	p::first-line 	Selects the first line of every <p> element
- - ::selection 	::selection 	Selects the portion of an element that is selected by a user
+  - ::first-letter 	p::first-letter 	Selects the first letter of every <p> element
+  - ::first-line 	p::first-line 	Selects the first line of every <p> element
+  - ::selection 	::selection 	Selects the portion of an element that is selected by a user
 - Altering:---------------------------------------------------------------------
- - ::after 	p::after 	Insert something after the content of each <p> element
- - ::before 	p::before 	Insert something before the content of each <p> element
+  - ::after 	p::after 	Insert something after the content of each <p> element
+  - ::before 	p::before 	Insert something before the content of each <p> element
 - Functions and Vars:-----------------------------------------------------------
- - attr() 	Returns the value of an attribute of the selected element
- - calc() 	Allows you to perform calculations to determine CSS property values  calc(100% - 100px)
- - max() min()  min(50%, 50px)
- - --varname
- - counter-reset
- - counter-increment
+  - attr() 	Returns the value of an attribute of the selected element
+  - calc() 	Allows you to perform calculations to determine CSS property values  calc(100% - 100px)
+  - max() min()  min(50%, 50px)
+- columns:----------------------------------------------------------------------
+  - columns combinator ||     col.selected || td
+  - :nth-col()
+  - :nth-last-col()
 
 }
 
@@ -135,14 +137,14 @@ const
   CSSPseudoID_FirstOfType = CSSPseudoID_OnlyChild+1; // :first-of-type
   CSSPseudoID_LastOfType = CSSPseudoID_FirstOfType+1; // :last-of-type
   CSSPseudoID_OnlyOfType = CSSPseudoID_LastOfType+1; // :only-of-type
-  CSSCallID_Not = CSSPseudoID_OnlyOfType+1; // :nth-child
-  CSSCallID_Is = CSSCallID_Not+1; // :nth-child
-  CSSCallID_Where = CSSCallID_Is+1; // :nth-child
-  CSSCallID_Has = CSSCallID_Where+1; // :nth-child
-  CSSCallID_NthChild = CSSCallID_Has+1; // :nth-child
-  CSSCallID_NthLastChild = CSSCallID_NthChild+1; // :nth-child
-  CSSCallID_NthOfType = CSSCallID_NthLastChild+1; // :nth-child
-  CSSCallID_NthLastOfType = CSSCallID_NthOfType+1; // :nth-child
+  CSSCallID_Not = CSSPseudoID_OnlyOfType+1; // :not()
+  CSSCallID_Is = CSSCallID_Not+1; // :is()
+  CSSCallID_Where = CSSCallID_Is+1; // :where()
+  CSSCallID_Has = CSSCallID_Where+1; // :has()
+  CSSCallID_NthChild = CSSCallID_Has+1; // :nth-child(n)
+  CSSCallID_NthLastChild = CSSCallID_NthChild+1; // :nth-last-child(n)
+  CSSCallID_NthOfType = CSSCallID_NthLastChild+1; // :nth-of-type(n)
+  CSSCallID_NthLastOfType = CSSCallID_NthOfType+1; // :nth-last-of-type(n)
   CSSLastPseudoID = CSSCallID_NthLastOfType;
 
 const
@@ -201,8 +203,7 @@ type
     function GetCSSPreviousOfType: ICSSNode;
     function HasCSSAttribute(const AttrID: TCSSNumericalID): boolean;
     function GetCSSAttribute(const AttrID: TCSSNumericalID): TCSSString;
-    function HasCSSPseudo(const AttrID: TCSSNumericalID): boolean;
-    function GetCSSPseudo(const AttrID: TCSSNumericalID): TCSSString;
+    function HasCSSPseudoClass(const AttrID: TCSSNumericalID): boolean;
     function GetCSSEmpty: boolean;
     function GetCSSDepth: integer;
     procedure SetCSSValue(AttrID: TCSSNumericalID; Value: TCSSElement);
@@ -213,7 +214,7 @@ type
   TCSSNumericalIDKind = (
     nikType,
     nikAttribute,
-    nikPseudoAttribute
+    nikPseudoClass
     );
   TCSSNumericalIDKinds = set of TCSSNumericalIDKind;
 
@@ -221,7 +222,7 @@ const
   CSSNumericalIDKindNames: array[TCSSNumericalIDKind] of TCSSString = (
     'Type',
     'Attribute',
-    'PseudoAttribute'
+    'PseudoClass'
     );
 
 type
@@ -732,7 +733,7 @@ begin
   if OnlySpecifity then
     exit(CSSSpecifityClass);
   Result:=CSSSpecifityNoMatch;
-  PseudoID:=ResolveIdentifier(aPseudoClass,nikPseudoAttribute);
+  PseudoID:=ResolveIdentifier(aPseudoClass,nikPseudoClass);
   case PseudoID of
   CSSIDNone:
     LogWarning(croErrorOnUnknownName in Options,20220911205605,'Unknown CSS selector pseudo attribute name "'+aPseudoClass.Name+'"',aPseudoClass);
@@ -763,7 +764,7 @@ begin
         and (TestNode.GetCSSPreviousOfType=nil) then
       Result:=CSSSpecifityClass;
   else
-    if TestNode.GetCSSPseudo(PseudoID)<>'' then
+    if TestNode.HasCSSPseudoClass(PseudoID) then
       Result:=CSSSpecifityClass;
   end;
 end;
@@ -1763,7 +1764,7 @@ begin
       'class': Result:=CSSAttributeID_Class;
       'all': Result:=CSSAttributeID_All;
       end;
-    nikPseudoAttribute:
+    nikPseudoClass:
       begin
       aName:=lowercase(aName); // pseudo attributes are ASCII case insensitive
       case aName of

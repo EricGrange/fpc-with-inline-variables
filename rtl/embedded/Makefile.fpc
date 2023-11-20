@@ -22,7 +22,7 @@ units=$(SYSTEMUNIT) $(CPU_UNITS) $(UUCHARUNIT) $(OBJPASUNIT) $(ISO7185UNIT) $(EX
        $(SYSCONSTUNIT)
 #implicitunits=exeinfo $(CP_UNITS)
 
-#rsts=math rtlconsts varutils typinfo variants classes sysconst dateutil
+#rsts=$(MATHUNIT) $(RTLCONSTSUNIT) $(TYPINFOUNIT) $(CLASSESUNIT) $(SYSCONSTUNIT)
 
 [require]
 nortl=y
@@ -43,7 +43,6 @@ INC=$(RTL)/inc
 COMMON=$(RTL)/common
 PROCINC=$(RTL)/$(CPU_TARGET)
 UNITPREFIX=rtl
-SYSTEMUNIT=system
 LOADERS=
 ifeq ($(ARCH),mipsel)
 ifeq ($(SUBARCH),pic32mx)
@@ -59,14 +58,14 @@ CPU_UNITS=
 SYSINIT_UNITS=
 CPU_SPECIFIC_COMMON_UNITS=$(SYSUTILSUNIT) $(MATHUNIT) $(CLASSESUNIT) \
 			  $(FGLUNIT) $(MACPASUNIT) $(TYPINFOUNIT) $(TYPESUNIT) \
-			  $(RTLCONSTSUNIT) $(GETOPTSUNIT) $(LINEINFOUNIT)
+			  $(RTLCONSTSUNIT) $(GETOPTSUNIT) $(LINEINFOUNIT) $(SOFTFPUUNIT)
 
 # Sysutils special deps
 SYSUTILS_DEPS_OS=$(HEAPMGRUNIT)$(PPUEXT)
 # Dos unit, local source
 DOSDIR=.
 # Dos unit uses objfpc mode
-DOS_DEPS_OS=objpas$(PPUEXT)
+DOS_DEPS_OS=$(OBJPASUNIT)$(PPUEXT)
 
 ifeq ($(ARCH),aarch64)
 CPU_UNITS=$(RASPI3UNIT) $(MMIOUNIT) $(MAILBOXUNIT) $(RASPIUARTUNIT) $(GPIOUNIT)
@@ -96,7 +95,7 @@ CPU_UNITS=$(LPC21X4UNIT) $(AT91SAM7X256UNIT) $(SC32442BUNIT)
 CPU_UNITS_DEFINED=1
 endif
 ifeq ($(SUBARCH),armv6m)
-CPU_UNITS=$(LPC8XXUNIT) $(LPC11XXUNIT) $(LPC122XUNIT) $(STM32F0XXUNIT) $(NRF51UNIT) $(CORTEXM0UNIT)
+CPU_UNITS=$(LPC8XXUNIT) $(LPC11XXUNIT) $(LPC122XUNIT) $(STM32F0XXUNIT) $(NRF51UNIT) $(CORTEXM0UNIT) $(RP2040UNIT)
 CPU_UNITS_DEFINED=1
 endif
 ifeq ($(SUBARCH),armv7a)
@@ -218,7 +217,7 @@ endif
 endif
 
 ifeq ($(ARCH),riscv32)
-CPU_SPECIFIC_COMMON_UNITS=sysutils math classes $(FGLUNIT) $(MACPASUNIT) typinfo types rtlconsts $(GETOPTSUNIT) $(LINEINFOUNIT)
+CPU_SPECIFIC_COMMON_UNITS=$(SYSUTILSUNIT) $(MATHUNIT) $(CLASSESUNIT) $(FGLUNIT) $(MACPASUNIT) $(TYPINFOUNIT) $(TYPESUNIT) $(RTLCONSTSUNIT) $(GETOPTSUNIT) $(LINEINFOUNIT)
 ifeq ($(SUBARCH),rv32ec)
 override FPCOPT+=-Cprv32ec
 CPU_UNITS=CH32VxBootstrap
@@ -263,7 +262,7 @@ endif
 endif
 
 ifeq ($(ARCH),wasm32)
-CPU_SPECIFIC_COMMON_UNITS:=$(filter-out $(LINEINFOUNIT), $(CPU_SPECIFIC_COMMON_UNITS))
+CPU_SPECIFIC_COMMON_UNITS:=$(filter-out $(SOFTFPUUNIT), $(filter-out $(LINEINFOUNIT), $(CPU_SPECIFIC_COMMON_UNITS)))
 endif
 
 # Paths
@@ -285,7 +284,7 @@ SYSCPUDEPS=$(addprefix $(PROCINC)/,$(CPUINCNAMES))
 
 # Put system unit dependencies together.
 SYSDEPS=$(SYSINCDEPS) $(SYSCPUDEPS) $(INC)/softfpu.pp
-FPC_SYSTEM_OPT=@system.cfg
+override FPC_SYSTEM_OPT += @system.cfg
 
 #
 # Loaders
@@ -322,23 +321,19 @@ EmbeddedApi.HeapMGR$(PPUEXT) : $(NSOSDIR)/EmbeddedApi.HeapMGR.pp $(HEAPMGR_DEPS)
 
 define CPU_UNITS_RULE
 ifndef FPC_DOTTEDUNITS
-ifeq ($(ARCH),avr)
-$(1)$(PPUEXT): $(ARCH)/$(1).pp intrinsics$(PPUEXT) $(SYSTEMUNIT)$(PPUEXT)
-else
-$(1)$(PPUEXT): $(ARCH)/$(1).pp $(SYSTEMUNIT)$(PPUEXT)
-endif
+$(1)$(PPUEXT): $(ARCH)/$(1).pp $(SYSTEMUNIT)$(PPUEXT) $(addsuffix $(PPUEXT),$(CPU_SPECIFIC_COMMON_UNITS))
 else
 $(eval UNIT_REG_NAME=$(subst EmbeddedApi.,,$(1)))
 $(eval UNIT_REG_NAME=$(subst ARMApi.,,$(UNIT_REG_NAME)))
 ifeq ($(ARCH),avr)
 # No dotted rules for AVR cpu yet
-$(1)$(PPUEXT):  $(ARCH)/$(1).pp intrinsics$(PPUEXT) $(SYSTEMUNIT)$(PPUEXT)
+$(1)$(PPUEXT):  $(ARCH)/$(1).pp $(SYSTEMUNIT)$(PPUEXT) $(addsuffix $(PPUEXT),$(CPU_SPECIFIC_COMMON_UNITS))
 else
 # mipsel is also not yet in namespaced
 ifeq ($(ARCH),mipsel)
-$(1)$(PPUEXT): $(ARCH)/$(1).pp $(SYSTEMUNIT)$(PPUEXT)
+$(1)$(PPUEXT): $(ARCH)/$(1).pp $(SYSTEMUNIT)$(PPUEXT) $(addsuffix $(PPUEXT),$(CPU_SPECIFIC_COMMON_UNITS))
 else
-$(1)$(PPUEXT): $(NSOSDIR)/$(ARCH)/$(1).pp $(ARCH)/$(UNIT_REG_NAME).pp $(SYSTEMUNIT)$(PPUEXT)
+$(1)$(PPUEXT): $(NSOSDIR)/$(ARCH)/$(1).pp $(ARCH)/$(UNIT_REG_NAME).pp $(SYSTEMUNIT)$(PPUEXT) $(addsuffix $(PPUEXT),$(CPU_SPECIFIC_COMMON_UNITS))
 endif
 endif
 endif
@@ -352,7 +347,6 @@ else
 $(addsuffix $(PPUEXT),$(CPU_UNITS)):
 	$(COMPILER) -g -Fi$(OSDIR) -Fi$(OSDIR)/$(ARCH) $<
 endif
-	
 
 # AVR specific units
 
